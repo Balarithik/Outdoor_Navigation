@@ -15,6 +15,14 @@ export async function getFeatures() {
   return apiGet('/api/v1/map/features')
 }
 
+export async function getAdminMapEditorAccess() {
+  return apiGet('/api/v1/admin/map-editor/')
+}
+
+export async function saveMapEditorChanges(payload) {
+  return apiPost('/api/v1/admin/map-editor/changes', payload)
+}
+
 export async function createFeature(feature) {
   return apiPost('/api/v1/map/features', feature)
 }

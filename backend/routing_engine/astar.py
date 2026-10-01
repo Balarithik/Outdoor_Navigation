@@ -98,13 +98,19 @@ def astar(
             # Build coordinate path
             coordinates = [[nodes[n]['lng'], nodes[n]['lat']] for n in path]
 
-            # Calculate total distance
+            # Calculate total distance using physical edge lengths when available;
+            # otherwise fall back to the routing weight to preserve legacy behavior.
             total_distance = 0.0
+            edge_lookup = graph.get('edges', {})
             for i in range(len(path) - 1):
                 n1, n2 = path[i], path[i + 1]
                 for neighbor, edge_id, weight in adjacency.get(n1, []):
                     if neighbor == n2:
-                        total_distance += weight
+                        edge = edge_lookup.get(edge_id)
+                        if edge:
+                            total_distance += float(edge.get('distance_m', weight))
+                        else:
+                            total_distance += float(weight)
                         break
 
             latency = (time.perf_counter() - start_time) * 1000

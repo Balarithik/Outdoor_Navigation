@@ -69,3 +69,21 @@ class TestWeightCalculator:
         edge = {'id': 'e1', 'base_time_sec': 100.0, 'current_time_sec': 100.0}
         self.calc.update_edge_weight(edge, 10)
         assert edge['base_time_sec'] == 100.0
+
+    def test_traffic_version_increments_only_for_meaningful_state_changes(self):
+        from traffic.service import TrafficService
+        from cache.redis import get_redis_client
+
+        service = TrafficService()
+        client = get_redis_client()
+        if client:
+            client.delete('traffic_version')
+        service._traffic_version = 0
+
+        assert service.get_traffic_version() == 0
+
+        service._increment_traffic_version()
+        assert service.get_traffic_version() == 1
+
+        service._increment_traffic_version()
+        assert service.get_traffic_version() == 2

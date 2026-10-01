@@ -81,15 +81,27 @@ class GraphManager:
             return graph
 
     def get_graph(self) -> Optional[GraphData]:
-        """Get the current in-memory graph."""
-        if self._graph is None:
-            return self.load_graph()
-        return self._graph
+        """Get the current in-memory graph, reloading if stale."""
+        with self._lock:
+            if getattr(self, '_map_version_stale', False) or self.is_graph_stale():
+                logger.info(f"Reloading graph due to map version change (v{self._map_version} -> new)")
+                self._graph_version += 1
+                try:
+                    from mapdata.models import MapVersion
+                    self._map_version = MapVersion.get_current_version()
+                except Exception:
+                    pass
+                self._map_version_stale = False
+                self._graph = self.load_graph()
+            elif self._graph is None:
+                self._graph = self.load_graph()
+            return self._graph
 
     def reload_graph(self) -> GraphData:
         """Force reload the graph from disk."""
         with self._lock:
             self._graph_version += 1
+            self._map_version_stale = False
             logger.info(f"Reloading graph, version {self._graph_version}")
             return self.load_graph()
 
@@ -111,6 +123,41 @@ class GraphManager:
         except Exception:
             pass
         return False
+
+    def mark_stale(self):
+        """Mark the graph as stale so it will be reloaded on next access."""
+        with self._lock:
+            self._map_version_stale = True
+
+    def ensure_current(self) -> GraphData:
+        """Ensure the graph is current; reload if stale. Returns the graph."""
+        with self._lock:
+            if getattr(self, '_map_version_stale', False) or self.is_graph_stale():
+                logger.info(f"Reloading graph due to map version change (v{self._map_version} -> new)")
+                self._graph_version += 1
+                try:
+                    from mapdata.models import MapVersion
+                    self._map_version = MapVersion.get_current_version()
+                except Exception:
+                    pass
+                self._map_version_stale = False
+                self._graph = self.load_graph()
+            return self._graph
+
+    def reload_if_stale(self) -> GraphData:
+        """Reload the graph if marked stale, using the lock. Returns the graph."""
+        with self._lock:
+            if getattr(self, '_map_version_stale', False) or self.is_graph_stale():
+                logger.info(f"Reloading graph due to map version change (v{self._map_version} -> new)")
+                self._graph_version += 1
+                try:
+                    from mapdata.models import MapVersion
+                    self._map_version = MapVersion.get_current_version()
+                except Exception:
+                    pass
+                self._map_version_stale = False
+                self._graph = self.load_graph()
+            return self._graph
 
     def update_edge_weight(self, edge_id: str, new_time_sec: float):
         """Update edge weight in the in-memory graph."""

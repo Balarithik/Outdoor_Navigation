@@ -2,6 +2,7 @@
 Tests for API endpoints.
 """
 import pytest
+from django.contrib.auth import get_user_model
 from django.test import Client
 from django.urls import reverse
 
@@ -87,6 +88,35 @@ class TestRouteAPI:
             'destination': {'lat': 9.57, 'lng': 77.68}
         }, content_type='application/json')
         assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestAdminMapEditorAccess:
+    """Test admin map editor authorization."""
+
+    def test_unauthenticated_admin_map_editor_rejected(self):
+        client = Client()
+        response = client.get('/api/v1/admin/map-editor/')
+        assert response.status_code in (401, 403)
+
+    def test_non_admin_user_rejected(self):
+        User = get_user_model()
+        user = User.objects.create_user(username='member', password='secret123')
+        client = Client()
+        client.force_login(user)
+        response = client.get('/api/v1/admin/map-editor/')
+        assert response.status_code == 403
+
+    def test_admin_user_has_access(self):
+        User = get_user_model()
+        user = User.objects.create_superuser(username='admin', email='admin@example.com', password='secret123')
+        client = Client()
+        client.force_login(user)
+        response = client.get('/api/v1/admin/map-editor/')
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['data']['allowed'] is True
 
 
 @pytest.mark.django_db

@@ -74,6 +74,7 @@ def api_root(request):
         'version': '1.0.0',
         'endpoints': {
             'map': '/api/v1/map/',
+            'admin_map_editor': '/api/v1/admin/map-editor/',
             'places': '/api/v1/places/',
             'routes': '/api/v1/routes/',
             'navigation': '/api/v1/navigation/',
@@ -90,6 +91,7 @@ urlpatterns = [
     path('api/health', health_check, name='health'),
     path('api/', api_root, name='api-root'),
     path('api/v1/map/', include('mapdata.urls')),
+    path('api/v1/admin/', include('mapdata.admin_urls')),
     path('api/v1/places/', include('places.urls')),
     path('api/v1/', include('routing_engine.urls')),
     path('api/v1/navigation/', include('navigation.urls')),

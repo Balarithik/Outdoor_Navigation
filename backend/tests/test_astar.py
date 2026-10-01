@@ -74,6 +74,29 @@ class TestAstar:
         # Should prefer A -> D -> C (250) over A -> B -> C (1100)
         assert 'D' in result['path']
 
+    def test_distance_uses_physical_edge_lengths_not_dynamic_weights(self):
+        """Physical distance should remain stable even if traffic makes travel time worse."""
+        graph = {
+            'nodes': {
+                'A': {'id': 'A', 'lat': 0.0, 'lng': 0.0},
+                'B': {'id': 'B', 'lat': 0.0, 'lng': 0.01},
+                'C': {'id': 'C', 'lat': 0.01, 'lng': 0.01},
+            },
+            'edges': {
+                'e1': {'id': 'e1', 'from': 'A', 'to': 'B', 'distance_m': 50.0, 'base_time_sec': 10.0, 'current_time_sec': 10.0},
+                'e2': {'id': 'e2', 'from': 'B', 'to': 'C', 'distance_m': 75.0, 'base_time_sec': 10.0, 'current_time_sec': 10.0},
+            },
+            'adjacency': {
+                'A': [('B', 'e1', 9999.0)],
+                'B': [('C', 'e2', 9999.0)],
+            },
+        }
+
+        result = astar(graph, 'A', 'C', current_time_func=lambda edge_id: 9999.0)
+        assert result is not None
+        assert result['distance_m'] == pytest.approx(125.0)
+        assert result['duration_sec'] == pytest.approx(19998.0)
+
     def test_heuristic_admissible(self):
         """Test that heuristic never overestimates."""
         h = heuristic(0.0, 0.0, 0.001, 0.001)

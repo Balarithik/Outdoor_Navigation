@@ -62,7 +62,8 @@ class TelemetryView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         service = TrafficService()
-        result = service.process_telemetry(session_id, lat, lng, timestamp)
+        navigation_id = data.get('navigation_id')
+        result = service.process_telemetry(session_id, lat, lng, timestamp, navigation_id)
 
         if result['success']:
             return Response(result, status=status.HTTP_200_OK)

@@ -182,6 +182,20 @@ class RoutingService:
         # Record metrics
         self.analytics.record_astar_run(result['latency_ms'])
 
+        # Recompute distance_m using actual edge.distance_m (physical distance)
+        # rather than dynamic weights, so traffic does not affect reported distance.
+        node_path = result['path']
+        physical_distance = 0.0
+        for i in range(len(node_path) - 1):
+            n1, n2 = node_path[i], node_path[i + 1]
+            for neighbor, edge_id, weight in graph.adjacency.get(n1, []):
+                if neighbor == n2:
+                    edge = graph.edges.get(edge_id)
+                    if edge:
+                        physical_distance += edge.get('distance_m', 0.0)
+                    break
+        result['distance_m'] = round(physical_distance, 2)
+
         # Build response
         route_data = {
             'route_id': result['route_id'],

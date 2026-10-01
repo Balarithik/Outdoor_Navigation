@@ -8,41 +8,101 @@ import TradeoffPanel from './components/traffic/TradeoffPanel'
 import TrafficDemo from './components/demo/TrafficDemo'
 import MapEditor from './components/admin/MapEditor'
 import { useCampusData } from './hooks/useCampusData'
+import { useGeolocation } from './hooks/useGeolocation'
 import { useNavigation } from './hooks/useNavigation'
 import { useTraffic } from './hooks/useTraffic'
 import { useWebSocket } from './hooks/useWebSocket'
+import { computeRoute } from './services/routeApi'
+import RerouteNotice from './components/navigation/RerouteNotice'
 
 export default function App() {
-  const [view, setView] = useState('map') // 'map' | 'demo' | 'admin'
+  const [view, setView] = useState(() => {
+    const path = window.location.pathname || '/'
+    if (path.startsWith('/admin')) return 'admin'
+    if (path.startsWith('/demo')) return 'demo'
+    return 'map'
+  })
   const [selectedPlace, setSelectedPlace] = useState(null)
   const [route, setRoute] = useState(null)
   const [showTradeoff, setShowTradeoff] = useState(false)
-
+  const [rerouteData, setRerouteData] = useState(null)
+  const { position, error: geoError, loading: geoLoading, getCurrentPosition } = useGeolocation()
   const { mapData, places, loading: mapLoading, error: mapError } = useCampusData()
   const { navigation, startNavigation, stopNavigation, updateLocation } = useNavigation()
   const { trafficData, trafficVersion, activeUsers } = useTraffic()
   const { connected, lastMessage } = useWebSocket(navigation?.navigation_id)
 
+  // Continuous GPS updates for active navigation
+  useEffect(() => {
+    if (!navigation || !position) return
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        updateLocation(
+          pos.coords.latitude,
+          pos.coords.longitude,
+          null  // edge_id will be determined server-side via map matching
+        )
+      },
+      (err) => {
+        console.error('Navigation GPS watch error:', err.message)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    )
+    return () => {
+      navigator.geolocation.clearWatch(watchId)
+    }
+  }, [navigation, position, updateLocation])
+
+  useEffect(() => {
+    const syncViewFromPath = () => {
+      const path = window.location.pathname || '/'
+      if (path.startsWith('/admin')) setView('admin')
+      else if (path.startsWith('/demo')) setView('demo')
+      else setView('map')
+    }
+
+    window.addEventListener('popstate', syncViewFromPath)
+    syncViewFromPath()
+
+    return () => window.removeEventListener('popstate', syncViewFromPath)
+  }, [])
+
+  const changeView = useCallback((nextView) => {
+    setView(nextView)
+    const pathname = nextView === 'admin' ? '/admin/map-editor' : nextView === 'demo' ? '/demo' : '/'
+    if (window.location.pathname !== pathname) {
+      window.history.pushState({}, '', pathname)
+    }
+  }, [])
+
   // Handle place selection
   const handlePlaceSelect = useCallback((place) => {
     setSelectedPlace(place)
-  }, [])
+    if (!position || !place) {
+      return
+    }
 
-  // Handle route request
-  const handleRouteRequest = useCallback(async (source, destination) => {
+    computeRoute(
+      { lat: position.lat, lng: position.lng },
+      { place_id: place.id },
+      'walking'
+    ).then((result) => {
+      if (result?.success) {
+        setRoute(result.data)
+      } else {
+        console.error('Route request failed:', result?.error || 'Unknown route error')
+      }
+    }).catch((err) => {
+      console.error('Route request failed:', err)
+    })
+  }, [position])
+
+  // Handle route request using computeRoute from routeApi
+  const computeRouteRequest = useCallback(async (source, destination) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/v1/routes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source,
-          destination: { place_id: destination.id },
-          mode: 'walking',
-        }),
-      })
-      const data = await response.json()
-      if (data.success) {
-        setRoute(data.data)
+      const result = await computeRoute(source, destination, 'walking')
+      if (result.success) {
+        setRoute(result.data)
       }
     } catch (err) {
       console.error('Route request failed:', err)
@@ -70,6 +130,15 @@ export default function App() {
         duration_sec: lastMessage.eta_sec,
         traffic_version: lastMessage.traffic_version,
       }))
+      setRerouteData({
+        event: 'route_changed',
+        route_id: lastMessage.route_id,
+        reason: lastMessage.reason,
+        eta_sec: lastMessage.eta_sec,
+        path: lastMessage.path,
+        traffic_version: lastMessage.traffic_version,
+        map_version: lastMessage.map_version,
+      })
     }
   }, [lastMessage])
 
@@ -88,19 +157,19 @@ export default function App() {
         <nav className="nav-tabs">
           <button
             className={view === 'map' ? 'active' : ''}
-            onClick={() => setView('map')}
+            onClick={() => changeView('map')}
           >
             Map
           </button>
           <button
             className={view === 'demo' ? 'active' : ''}
-            onClick={() => setView('demo')}
+            onClick={() => changeView('demo')}
           >
             Traffic Demo
           </button>
           <button
             className={view === 'admin' ? 'active' : ''}
-            onClick={() => setView('admin')}
+            onClick={() => changeView('admin')}
           >
             Admin
           </button>
@@ -156,6 +225,8 @@ export default function App() {
             />
           </>
         )}
+
+        {rerouteData && <RerouteNotice rerouteData={rerouteData} onDismiss={() => setRerouteData(null)} />}
 
         {view === 'demo' && (
           <TrafficDemo />
